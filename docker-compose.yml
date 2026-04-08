@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  # --- BANCO DE DADOS ---
+  db_lab:
+    image: postgres:15
+    container_name: postgres_lab
+    restart: always
+    environment:
+      - POSTGRES_DB=lab_db
+      - POSTGRES_USER=admin_lab
+      - POSTGRES_PASSWORD=senha_segura_lab
+    ports:
+      - "5433:5432" # Porta externa 5433 para não bater com a outra
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - internal_bridge
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin_lab -d lab_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- PGADMIN ---
+  pgadmin_lab:
+    image: dpage/pgadmin4
+    container_name: pgadmin_lab
+    restart: always
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=cadu@lab.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    ports:
+      - "8889:80" # Acessar via IP:8889
+    depends_on:
+      - db_lab
+    networks:
+      - internal_bridge
+
+  # --- BACKEND ---
+  backend_lab:
+    build: .
+    container_name: backend_lab
+    restart: always
+    depends_on:
+      db_lab:
+        condition: service_healthy # O DELAY QUE VOCÊ PEDIU
+    environment:
+      - DB_HOST=db_lab
+      - DB_PORT=5432
+      - DB_NAME=lab_db
+      - DB_USER=admin_lab
+      - DB_PASS=senha_segura_lab
+      - PORT=4000
+    command: sh -c "sleep 10 && npm start" # Delay extra de segurança
+    ports:
+      - "4000:4000"
+    networks:
+      - internal_bridge
+      - external_bridge
+
+  # --- FRONTEND ---
+  frontend_lab:
+    build: 
+      context: ../paulo-lab-frontend
+      # Passando a URL do backend atualizada direto no build:
+      args:
+        - VITE_API_URL=http://localhost:4000/api
+    container_name: frontend_lab
+    restart: always
+    ports:
+      - "83:80" # Acessar a aplicação na porta 83
+    networks:
+      - external_bridge
+
+networks:
+  internal_bridge:
+    driver: bridge
+  external_bridge:
+    driver: bridge
+
+volumes:
+  pgdata:
